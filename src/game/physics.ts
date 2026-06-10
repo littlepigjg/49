@@ -74,25 +74,33 @@ export function stepPhysics(
     }
   }
 
+  const checkPockets = () => {
+    for (const ball of activeBalls) {
+      if (ball.pocketed) continue;
+      for (const pocket of POCKETS) {
+        const d = v.dist(ball.pos, pocket.pos);
+        if (d < pocket.radius - BALL_RADIUS * 0.3) {
+          ball.pocketed = true;
+          ball.pocketedAt = timestamp || Date.now();
+          ball.vel.x = 0;
+          ball.vel.y = 0;
+          result.pocketedBalls.push(ball.id);
+          break;
+        }
+      }
+    }
+  };
+
+  checkPockets();
+
   for (const ball of activeBalls) {
+    if (ball.pocketed) continue;
     if (resolveWallCollision(ball)) {
       result.wallCollisions.push({ ballId: ball.id });
     }
   }
 
-  for (const ball of activeBalls) {
-    for (const pocket of POCKETS) {
-      const d = v.dist(ball.pos, pocket.pos);
-      if (d < pocket.radius - BALL_RADIUS * 0.3) {
-        ball.pocketed = true;
-        ball.pocketedAt = timestamp || Date.now();
-        ball.vel.x = 0;
-        ball.vel.y = 0;
-        result.pocketedBalls.push(ball.id);
-        break;
-      }
-    }
-  }
+  checkPockets();
 
   return result;
 }

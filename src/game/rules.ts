@@ -188,14 +188,8 @@ export function resolveShot(
     }
 
     if (pocketedNonCue.length > 0 && !hasFoul) {
-      const lowestRemaining = Math.min(
-        ...balls.filter((b) => !b.pocketed && b.id !== 0).map((b) => b.id),
-      );
-      const firstHit = shot.hits[0]?.ballId;
-      if (firstHit === lowestRemaining) {
-        switchTurn = false;
-        hintMessage = `好球！打进 ${pocketedNonCue.length} 颗，继续击打`;
-      }
+      switchTurn = false;
+      hintMessage = `好球！打进 ${pocketedNonCue.length} 颗，继续击打`;
     }
   }
 

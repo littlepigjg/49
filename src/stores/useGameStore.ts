@@ -207,14 +207,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (s.phase !== 'simulating') return;
 
     const substeps = 2;
+    const allNewPocketedIds: number[] = [];
+
     for (let i = 0; i < substeps; i++) {
-      stepPhysics(s.balls, 1 / 120, s.currentShot?.hits, Date.now());
+      const result = stepPhysics(s.balls, 1 / 120, s.currentShot?.hits, Date.now());
+      if (result.pocketedBalls.length > 0) {
+        allNewPocketedIds.push(...result.pocketedBalls);
+      }
     }
 
-    if (s.currentShot) {
-      const pocketed = s.balls.filter((b) => b.pocketed && b.pocketedAt && !s.currentShot!.pocketedBalls.includes(b.id));
-      if (pocketed.length > 0) {
-        s.currentShot.pocketedBalls.push(...pocketed.map((b) => b.id));
+    if (s.currentShot && allNewPocketedIds.length > 0) {
+      const deduplicated = allNewPocketedIds.filter(
+        (id) => !s.currentShot!.pocketedBalls.includes(id),
+      );
+      if (deduplicated.length > 0) {
+        s.currentShot.pocketedBalls.push(...deduplicated);
       }
     }
 
