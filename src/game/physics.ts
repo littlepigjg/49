@@ -55,16 +55,18 @@ export function stepPhysics(
     if (Math.abs(ball.vel.y) < MIN_VELOCITY) ball.vel.y = 0;
   }
 
+  const cueBallFirstHitRecorded = () => hitRecords && hitRecords.length > 0;
+
   for (let i = 0; i < activeBalls.length; i++) {
     const a = activeBalls[i];
     for (let j = i + 1; j < activeBalls.length; j++) {
       const b = activeBalls[j];
       if (resolveBallCollision(a, b)) {
         result.ballCollisions.push({ a: a.id, b: b.id });
-        if (hitRecords && timestamp !== undefined) {
-          if (!hitRecords.find((h) => h.ballId === a.id) && a.id === 0) {
+        if (hitRecords && timestamp !== undefined && !cueBallFirstHitRecorded()) {
+          if (a.id === 0) {
             hitRecords.push({ ballId: b.id, timestamp });
-          } else if (!hitRecords.find((h) => h.ballId === b.id) && b.id === 0) {
+          } else if (b.id === 0) {
             hitRecords.push({ ballId: a.id, timestamp });
           }
         }

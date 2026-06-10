@@ -1,6 +1,11 @@
 import type { Ball, FoulType, GameMode, Player, Shot } from './types';
 import { FoulType as FoulTypeEnum } from './types';
 import { FOUL_MESSAGES } from './constants';
+import {
+  calculateScoreAndUpdatePlayers,
+  assignGroupsOnFirstPocket,
+  clonePlayers,
+} from './scoring';
 
 export function getLegalFirstBalls(
   mode: GameMode,
@@ -11,6 +16,7 @@ export function getLegalFirstBalls(
   const activeBalls = balls.filter((b) => !b.pocketed && b.id !== 0);
 
   if (mode === '9ball') {
+    if (activeBalls.length === 0) return [];
     const lowest = Math.min(...activeBalls.map((b) => b.id));
     return [lowest];
   }
@@ -77,10 +83,13 @@ export function checkFoul(
 
 export interface ResolveResult {
   switchTurn: boolean;
-  assignGroups?: { p1Group: 'solid' | 'stripe' | null; p2Group: 'solid' | 'stripe' | null };
   gameOver: boolean;
   winnerId?: number;
   hintMessage: string | null;
+  updatedPlayers: Player[];
+  groupsAssigned: boolean;
+  scoredBallIds: number[];
+  scoreGained: number;
 }
 
 export function resolveShot(
@@ -92,31 +101,29 @@ export function resolveShot(
   foul: FoulType,
   groupsAssigned: boolean,
 ): ResolveResult {
-  const currentPlayer = players.find((p) => p.id === currentPlayerId)!;
-  const otherPlayer = players.find((p) => p.id !== currentPlayerId)!;
   const hasFoul = foul !== FoulTypeEnum.NONE;
   let switchTurn = true;
-  let hintMessage: string | null = null;
+  let currentPlayers = clonePlayers(players);
 
   const pocketedNonCue = shot.pocketedBalls.filter((id) => id !== 0);
+  const currentPlayer = currentPlayers.find((p) => p.id === currentPlayerId)!;
+
+  let groupsNowAssigned = groupsAssigned;
+  let hintMessage: string | null = null;
+
+  if (mode === '8ball' && !groupsAssigned && pocketedNonCue.length > 0 && !hasFoul) {
+    const assignResult = assignGroupsOnFirstPocket(balls, pocketedNonCue, currentPlayers, currentPlayerId);
+    currentPlayers = assignResult.updatedPlayers;
+    groupsNowAssigned = assignResult.groupsAssigned;
+    if (assignResult.hintMessage) {
+      hintMessage = assignResult.hintMessage;
+    }
+  }
+
+  const updatedCurrentPlayer = currentPlayers.find((p) => p.id === currentPlayerId)!;
 
   if (mode === '8ball') {
-    if (!groupsAssigned && pocketedNonCue.length > 0 && !hasFoul) {
-      const firstPocketed = pocketedNonCue[0];
-      const ball = balls.find((b) => b.id === firstPocketed);
-      if (ball && ball.id !== 8) {
-        const p1Group = currentPlayer.id === 0
-          ? ball.stripe ? 'stripe' : 'solid'
-          : ball.stripe ? 'stripe' : 'solid';
-        const p2Group = p1Group === 'solid' ? 'stripe' : 'solid';
-        currentPlayer.group = p1Group;
-        otherPlayer.group = p2Group;
-        groupsAssigned = true;
-        hintMessage = `${currentPlayer.name} 已分配：${p1Group === 'solid' ? '全色球' : '半色球'}`;
-      }
-    }
-
-    const group = currentPlayer.group;
+    const group = updatedCurrentPlayer.group;
     if (group && !hasFoul) {
       const ownGroupPocketed = pocketedNonCue.filter((id) => {
         const ball = balls.find((b) => b.id === id);
@@ -126,7 +133,7 @@ export function resolveShot(
 
       if (ownGroupPocketed.length > 0) {
         switchTurn = false;
-        hintMessage = `好球！继续击打`;
+        hintMessage = `好球！打进 ${ownGroupPocketed.length} 颗，继续击打`;
       }
     }
 
@@ -137,17 +144,47 @@ export function resolveShot(
       ).length;
 
       if (groupBallsRemaining === 0 && !hasFoul) {
-        return { switchTurn: false, gameOver: true, winnerId: currentPlayerId, hintMessage: `${currentPlayer.name} 获胜！` };
+        const scoreResult = calculateScoreAndUpdatePlayers(mode, balls, shot, currentPlayers, currentPlayerId, hasFoul);
+        return {
+          switchTurn: false,
+          gameOver: true,
+          winnerId: currentPlayerId,
+          hintMessage: `${currentPlayer.name} 获胜！`,
+          updatedPlayers: scoreResult.updatedPlayers,
+          groupsAssigned: groupsNowAssigned,
+          scoredBallIds: scoreResult.scoredBallIds,
+          scoreGained: scoreResult.scoreGained,
+        };
       }
       if (hasFoul || groupBallsRemaining > 0) {
-        return { switchTurn: true, gameOver: true, winnerId: otherPlayer.id, hintMessage: `${otherPlayer.name} 获胜！` };
+        const otherPlayerId = currentPlayers.find((p) => p.id !== currentPlayerId)!.id;
+        return {
+          switchTurn: true,
+          gameOver: true,
+          winnerId: otherPlayerId,
+          hintMessage: `${currentPlayers.find((p) => p.id !== currentPlayerId)!.name} 获胜！`,
+          updatedPlayers: currentPlayers,
+          groupsAssigned: groupsNowAssigned,
+          scoredBallIds: [],
+          scoreGained: 0,
+        };
       }
     }
   }
 
   if (mode === '9ball') {
     if (pocketedNonCue.includes(9) && !hasFoul) {
-      return { switchTurn: false, gameOver: true, winnerId: currentPlayerId, hintMessage: `${currentPlayer.name} 获胜！` };
+      const scoreResult = calculateScoreAndUpdatePlayers(mode, balls, shot, currentPlayers, currentPlayerId, hasFoul);
+      return {
+        switchTurn: false,
+        gameOver: true,
+        winnerId: currentPlayerId,
+        hintMessage: `${currentPlayer.name} 获胜！`,
+        updatedPlayers: scoreResult.updatedPlayers,
+        groupsAssigned: groupsNowAssigned,
+        scoredBallIds: scoreResult.scoredBallIds,
+        scoreGained: scoreResult.scoreGained,
+      };
     }
 
     if (pocketedNonCue.length > 0 && !hasFoul) {
@@ -157,21 +194,20 @@ export function resolveShot(
       const firstHit = shot.hits[0]?.ballId;
       if (firstHit === lowestRemaining) {
         switchTurn = false;
-        hintMessage = `好球！继续击打`;
+        hintMessage = `好球！打进 ${pocketedNonCue.length} 颗，继续击打`;
       }
     }
   }
 
-  currentPlayer.score += pocketedNonCue.filter((id) => {
-    if (mode === '8ball') {
-      const ball = balls.find((b) => b.id === id);
-      if (!ball || ball.id === 8) return false;
-      const grp = currentPlayer.group;
-      if (!grp) return true;
-      return (grp === 'solid' && !ball.stripe) || (grp === 'stripe' && ball.stripe);
-    }
-    return id !== 9;
-  }).length;
+  const scoreResult = calculateScoreAndUpdatePlayers(mode, balls, shot, currentPlayers, currentPlayerId, hasFoul);
 
-  return { switchTurn, gameOver: false, hintMessage };
+  return {
+    switchTurn,
+    gameOver: false,
+    hintMessage,
+    updatedPlayers: scoreResult.updatedPlayers,
+    groupsAssigned: groupsNowAssigned,
+    scoredBallIds: scoreResult.scoredBallIds,
+    scoreGained: scoreResult.scoreGained,
+  };
 }

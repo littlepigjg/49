@@ -243,29 +243,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
       s.groupsAssigned,
     );
 
+    const updatedPlayers = resolve.updatedPlayers;
+    const groupsAssigned = resolve.groupsAssigned;
+
     const shotHistory = [...s.shotHistory, s.currentShot];
     let nextPlayerId = s.currentPlayerId;
     let freeBall = false;
-    let groupsAssigned = s.groupsAssigned;
 
     if (resolve.switchTurn) {
-      nextPlayerId = s.players.find((p) => p.id !== s.currentPlayerId)!.id;
+      nextPlayerId = updatedPlayers.find((p) => p.id !== s.currentPlayerId)!.id;
     }
     if (foulResult.foul !== FoulTypeEnum.NONE) {
       freeBall = true;
     }
-    if (!groupsAssigned) {
-      groupsAssigned = s.players.every((p) => p.group !== null);
-    }
 
-    const legalBalls = getLegalFirstBalls(s.mode, s.balls, s.players.find((p) => p.id === nextPlayerId)!, groupsAssigned);
+    const nextPlayer = updatedPlayers.find((p) => p.id === nextPlayerId)!;
+    const legalBalls = getLegalFirstBalls(s.mode, s.balls, nextPlayer, groupsAssigned);
     const legalBall = s.balls.find((b) => b.id === legalBalls[0]);
     const hint = resolve.hintMessage || (legalBall ? `目标球: ${legalBall.id}号` : null);
 
     if (resolve.gameOver && resolve.winnerId !== undefined) {
       stopRecording();
-      const winner = s.players.find((p) => p.id === resolve.winnerId) || null;
+      const winner = updatedPlayers.find((p) => p.id === resolve.winnerId) || null;
       set({
+        players: updatedPlayers,
         winner,
         phase: 'gameover',
         shotHistory,
@@ -273,6 +274,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         foulMessage: foulResult.message || resolve.hintMessage,
         targetBallHint: resolve.hintMessage,
         replayRecording: false,
+        groupsAssigned,
       });
       return;
     }
@@ -285,6 +287,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const turnNumber = resolve.switchTurn ? s.turnNumber + 1 : s.turnNumber;
 
     set({
+      players: updatedPlayers,
       currentPlayerId: nextPlayerId,
       shotHistory,
       foul: foulResult.foul,
